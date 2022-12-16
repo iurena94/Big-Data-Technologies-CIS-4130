@@ -46,6 +46,7 @@ Once completed, I’m able to download the dataset. The dataset in question can 
 `kaggle datasets download -d ipythonx/wikiart-gangogh-creating-art-gan -p -  | aws s3 cp - s3://project-data-images/art.zip`
 
 After the download was completed, I checked to see if the bucket is storing any information with the following command
+
 `aws s3 ls s3://project-data-images/`.
 
 ![image](https://user-images.githubusercontent.com/101361036/208178021-4776dd48-95b6-4c9f-a2a5-21349e4d7d29.png)
@@ -89,7 +90,7 @@ results.to_csv('s3://project-data-images/WikiArt_analysis.csv')
 print(results)
 ```
 
-![image](https://user-images.githubusercontent.com/101361036/208178268-03046c0a-950a-42a4-beff-e8f4bb2f1a86.png)
+![image](https://user-images.githubusercontent.com/101361036/208181767-02fd9ca5-6ae3-462d-8552-59918c01a4a4.png)
 
 The current .csv file doesn’t provide information on the images other than the category they fall under. I’ll be running the script below to create a new .csv file, named “WikiArtFeatures.csv”, with columns describing different features of each image. These features include resolution, RGB pixel mean, light ratio, and the number of key points from running the ORB, FAST, and BRIEF algorithms.
 ```py
@@ -169,17 +170,20 @@ print(results)
 
  
 ### Modeling
-After having collected some features into an .csv file, I begin modeling a pipeline using pyspark. The .csv file collected from the prior step will be read, split up, then fitted into the pipeline. To begin, I first read the file into “wikiartdf” and create a new column to store the label for each image. The labels will be a number from zero to thirteen, which corresponds to an art genre.
+After having collected some features into an .csv file, I begin modeling a pipeline using pyspark. The .csv file collected from the prior step will be read, split up, then fitted into the pipeline. To begin, I first read the file into “wikiartdf” and create a new column to store the label for each image. The labels will be a number from zero to thirteen, which corresponds to an art genre. 
+
+*matplotlib is installed in preparation for the final step using `pip3 install matplotlib`*  
 ```py
 # Necessary Imports
 from pyspark.sql.functions import *
-from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.regression import RandomForestRegressor
 from pyspark.ml import Pipeline
-from pyspark.ml.classification import LogisticRegression, LogisticRegressionModel
 from pyspark.ml.evaluation import *
 from pyspark.ml.tuning import *
 from itertools import chain
 from pyspark.sql.types import *
+import matplotlib.pyplot as plt
 import numpy as np
 
 spark = SparkSession.builder.getOrCreate()
@@ -193,33 +197,31 @@ labels = {'abstract':0, 'animal-painting':1, 'cityscape':2, 'figurative':3, 'flo
 labels_expr = create_map([lit(x) for x in chain(*labels.items())])
 wikiartdf = wikiartdf.withColumn("label", labels_expr[col("Class_name")])
 ```
-Since two of the ten columns are strings, I'll be using an String Indexer and One Hot Encoder to convert them into a vector before assembling all the columns in the Vector Assembler. Having made these stages, the pipeline can be assigned to “wikiartpipe”.
+Since two of the ten columns are strings, but I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consiste of one stage, being the assembler.
 ```py
-#Indexer, encoder for two strings
-indexer = StringIndexer(inputCols=["Image_name", "Class_name"], outputCols=["nameIndex","classIndex"])
-encoder = OneHotEncoder(inputCols=["nameIndex", "classIndex"], outputCols = ["nameVector", "classVector"], dropLast=False)
-assembler = VectorAssembler(inputCols=["nameVector", "classVector", "HorizontalResolution", "VerticalResolution",\
+#Aseembler
+assembler = VectorAssembler(inputCols=["HorizontalResolution", "VerticalResolution",\
  "LightRatio", "RGBMean", "ORB", "FAST", "BRIEF", "label"], outputCol="features")
 #Pipeline
-wikiartpipe = Pipeline(stages=[indexer, encoder, assembler])
+wikiartpipe = Pipeline(stages=[assembler])
 ```
-This pipeline is then fitted with the wikiartdf dataframe and split up into a trainingData and testData. I’ve made the distribution of data to be a 70/30 split. For this pipeline, I’ll be using logistic regression as an estimator and multiclass classification as an evaluator. The Cross Validator is assigned to “cv” before fitting in the training data. 
+This pipeline is then fitted with the wikiartdf dataframe and split up into a trainingData and testData. I’ve made the distribution of data to be a 70/30 split. For this pipeline, I’ll be using random forest regressor as an estimator and multiclass classification as an evaluator. The Cross Validator is assigned to “cv” before fitting in the training data. 
 ```py
 #Transformed pipeline
-transformed_wikiartdf = wikiartpipe.fit(wikiartdf).transform(wikiartdf)
+transformed_wikiartdf = transformed_wikiartpipe.fit(wikiartdf).transform(wikiartdf)
 #Spliting data
 trainingData, testData = wikiartdf.randomSplit([0.7,0.3])
-#Logistic Regression
-lr = LogisticRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8)
+#Random Forest Regressor
+rf = RandomForestRegressor(labelCol="label", featuresCol="features")
 #Creating grid
 grid = ParamGridBuilder()
-grid = grid.addGrid(lr.regParam, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-grid = grid.addGrid(lr.elasticNetParam, [0, 1])
+grid = grid.addGrid(rf.numTrees, [int(x) for x in np.linspace(start = 10, stop = 50, num = 3)])
+grid = grid.addGrid(rf.maxDepth, [int(x) for x in np.linspace(start = 5, stop = 25, num = 3)])
 grid = grid.build()
 #Multiclass classificaiton evaluator
 evaluator = MulticlassClassificationEvaluator()
 #Cross Validator
-cv = CrossValidator(estimator=lr, estimatorParamMaps=grid, evaluator=evaluator)
+cv = CrossValidator(estimator=lr, estimatorParamMaps=grid, evaluator=evaluator, numFolds=3)
 all_models = cv.fit(trainingData)
 ```
 I extract the best model derived from the Cross Validator and test the accuracy of its predictions. 
@@ -234,51 +236,38 @@ test_results.select('Image_name','Class_name','probability', 'prediction',
 #Best models accuaracy 
 print(evaluator.evaluate(test_results))
 ```
-The model’s accuracy, precision, recall, and F1 score are all calculated.
-```py
-def calculate_recall_precision(cm):
-	tn = cm[0][1] # True Negative
-	fp = cm[0][2] # False Positive
-	fn = cm[1][1] # False Negative
-	tp = cm[1][2] # True Positive
-	precision = tp / (tp + fp)
-	recall = tp / (tp + fn)
-	accuracy = (tp + tn) / (tp + tn + fp + fn)
-	f1_score = 2 * ((precision * recall) / (precision + recall))
-	return accuracy, precision, recall, f1_score
+![image](https://user-images.githubusercontent.com/101361036/208192446-ab7ac670-0399-4a6c-bb18-42a3cbc82ca3.png)
 
-cm = test_results.groupby('label').pivot('prediction').count().fillna(0).collect()
-print(calculate_recall_precision(cm))
+Visualizing the results of any model makes it easier to understand how successful a model has become without having to be overwhelmed by multiple values. I'll be displaying a table to show an image's predicted and true label.
+```py
+test_results.select('Image_name','Class_name','prediction','label').show(truncate=False)
 ```
-This model is then saved into the “project-data-images” bucket under the name “wikiart_logistic_regression”.
+![image](https://user-images.githubusercontent.com/101361036/208200184-6df102a6-8377-4994-88d2-c15427a95dc4.png)
+
+This model is then saved into the “project-data-images” bucket under the name “wikiart_random_forest_regression”.
 ```
 #Saving the best model
-model_path = "s3://project-data-images/wikiart_logistic_regression"
+model_path = "s3://project-data-images/wikiart_random_forest_regression"
 bestModel.write().overwrite().save(model_path) 
 ```
-### Visualization
-Visualizing the results of any model makes it easier to understand how successful a model has become without having to be overwhelmed by multiple values. The results from the prior section, “test_results”, can be used to create a confusion matrix. This will display each art genre with their predictions. 
+We can create a bar graph to show the importance each feature had on developing the model. 
 ```py
-#Confusion Matrix based on results from best model
-test_results.groupby('label').pivot('prediction').count().fillna(0).show()
-```
+featurelst = ["HorizontalResolution", "VerticalResolution",\
+ "LightRatio", "RGBMean", "ORB", "FAST", "BRIEF", "label"]
 
-![image](https://user-images.githubusercontent.com/101361036/208178523-f330c91b-e95a-48a1-b320-1ff5f38f9c48.png)
-
-We can create a graph to show the relationship between the model's precision and recall.
-```py
-import matplotlib.pyplot as plt
-plt.figure(figsize=(5,5))
-plt.plot(bestModel.summary.precisionByLabel, bestModel.summary.recallByLabel)
-plt.xlabel('Precision')
-plt.ylabel('Recall')
-plt.title("Precision and Recall Curve")
-plt.savefig("s3://project-data-images/PRC.png")
+importances = bestModel.featureImportances
+x_values = list(range(len(importances)))
+plt.bar(x_values, importances, orientation = 'vertical')
+plt.xticks(x_values, featurelst, rotation=40)
+plt.ylabel('Importance')
+plt.xlabel('Feature')
+plt.title('Feature Importances')
+plt.savefig("FeatureImportances.png")
 ```
 The created .png can then be moved from the HDFS by using
 `hdfs df -get hdfs:///PRC.png` then `aws s3 cp PRC.png s3://project-data-images`
 
-PRC.png:
+##### *FeatureImportances.png*
 
 
 
