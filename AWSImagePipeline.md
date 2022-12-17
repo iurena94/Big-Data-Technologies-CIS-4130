@@ -136,7 +136,7 @@ for object in my_bucket.objects.all():
 			# computing FAST
 			fast = cv.FastFeatureDetector_create()
 			fastkeypoints = fast.detect(img, None)
-			# computing BRIEF
+			# computing BRIEF 
 			brief = cv.xfeatures2d.BriefDescriptorExtractor_create()
 			briefkeypoints, briefdescriptor = brief.compute(img,fastkeypoints)
 			# computing Light ratio
@@ -152,6 +152,10 @@ rgbmean,len(orbkeypoints), len(fastkeypoints),len(briefkeypoints)]
 df=pd.DataFrame(data = rows, columns = fields)
 df.to_csv('s3://project-data-images/WikiArtFeatures.csv', index=False)
 ```
+[^1] ORB
+[^2] BRIEF
+[^3] FAST
+
 With the new .csv file created; I’ll be able to collect information regarding the image’s features. To ensure the new file is accessible I’ll be taking the average, maximum, and minimum of image resolutions. I’ll be reusing the prior script with the addition of our wanted parameters. 
 ```py
 import boto3
@@ -174,8 +178,8 @@ After having collected some features into an .csv file, I begin modeling a pipel
 # Necessary Imports
 from pyspark.sql.functions import *
 from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.regression import RandomForestRegressor
 from pyspark.ml import Pipeline
+from pyspark.ml.classification import LogisticRegression, LogisticRegressionModel
 from pyspark.ml.evaluation import *
 from pyspark.ml.tuning import *
 from itertools import chain
@@ -198,24 +202,24 @@ wikiartdf = wikiartdf.withColumn("label", labels_expr[col("Class_name")])
 
 Since two of the ten columns are strings, but I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consist of one stage, which is the assembler.
 ```py
-#Aseembler
+#Assembler
 assembler = VectorAssembler(inputCols=["HorizontalResolution", "VerticalResolution",\
- "LightRatio", "RGBMean", "ORB", "FAST", "BRIEF", "label"], outputCol="features")
+ "LightRatio", "RGBMean", "ORB", "FAST", "BRIEF"], outputCol="features")
 #Pipeline
 wikiartpipe = Pipeline(stages=[assembler])
 ```
-This pipeline is then fitted with the wikiartdf dataframe and split up into a trainingData and testData. I’ve made the distribution of data to be a 70/30 split. For this pipeline, I’ll be using random forest regressor as an estimator and multiclass classification as an evaluator. The Cross Validator is assigned to “cv” before fitting in the training data. 
+This pipeline is then fitted with the wikiartdf dataframe and split up into a trainingData and testData. I’ve made the distribution of data to be a 70/30 split. For this pipeline, I’ll be using logistic regression as an estimator and multiclass classification as an evaluator. The Cross Validator is assigned to “cv” before fitting in the training data. 
 ```py
 #Transformed pipeline
 transformed_wikiartdf = transformed_wikiartpipe.fit(wikiartdf).transform(wikiartdf)
 #Spliting data
 trainingData, testData = wikiartdf.randomSplit([0.7,0.3])
-#Random Forest Regressor
-rf = RandomForestRegressor(labelCol="label", featuresCol="features")
+#Logistic Regression
+lr = LogisticRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8)
 #Creating grid
 grid = ParamGridBuilder()
-grid = grid.addGrid(rf.numTrees, [int(x) for x in np.linspace(start = 10, stop = 50, num = 3)])
-grid = grid.addGrid(rf.maxDepth, [int(x) for x in np.linspace(start = 5, stop = 25, num = 3)])
+grid = grid.addGrid(lr.regParam, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+grid = grid.addGrid(lr.elasticNetParam, [0, 0.5, 1])
 grid = grid.build()
 #Multiclass classificaiton evaluator
 evaluator = MulticlassClassificationEvaluator()
@@ -236,10 +240,10 @@ print(evaluator.evaluate(test_results))
 ```
 ![image](https://user-images.githubusercontent.com/101361036/208216456-9242c702-bce7-45f0-aec1-23f364d034dc.png)
 
-This model is then saved into the “project-data-images” bucket under the name “wikiart_random_forest_regression”.
+This model is then saved into the “project-data-images” bucket under the name “wikiart_logistic_regression”.
 ```
 #Saving the best model
-model_path = "s3://project-data-images/wikiart_random_forest_regression"
+model_path = "s3://project-data-images/wikiart_logistic_regression"
 bestModel.write().overwrite().save(model_path) 
 ```
 
@@ -271,6 +275,15 @@ The created .png image can then be moved from the HDFS by using
 
 ![prc](https://user-images.githubusercontent.com/101361036/208216202-e03e3634-5901-44bc-8387-1c2db76b7c1f.png)
 
+
 ## Conclusion
 
 Overall, this project was used to gain an understanding of how to develop a proper machine-learning pipeline. Having had no prior experience working with a cloud infrastructure or assembling a pipeline, completing this project proved to be very insightful. It's clear from the results that this model isn't the best, and some sort of improvement is necessary. There are a few things I would've done differently, which include experimenting with the different types of regression. I would experiment with models that used random forest or decision tree regression. These could be more suitable for working with multiple classes. Additionally, I'd considered creating a model that directly reads the images instead of accumulating image features into a spreadsheet. As a result, it would eliminate the need to run the feature extraction script and might result in a promising model.
+
+## Code Sources 
+
+[^1]: Deepanshu Tyagi, Accessed Dec (2022), https://medium.com/data-breach/introduction-to-orb-oriented-fast-and-rotated-brief-4220e8ec40cf
+
+[^2]: Deepanshu Tyagi, Accessed Dec (2022), https://medium.com/data-breach/introduction-to-brief-binary-robust-independent-elementary-features-436f4a31a0e6
+
+[^3]: Deepanshu Tyagi, Accessed Dec (2022), https://medium.com/data-breach/introduction-to-fast-features-from-accelerated-segment-test-4ed33dde6d65
