@@ -1,6 +1,6 @@
 
 ## Project Proposal
-The aim of this project is to identify the characteristics related to a specific type of visual art. Through the collection and evaluation of images from WikiArt.org, the likelihood of a new image falling into an art category can be predicted. Unique data can be generated following the same attributes observed in each art type. 
+The aim of this project is to identify the characteristics related to a specific genre of visual art. Through the collection and evaluation of images from WikiArt.org, the probability a new image falls into an art genre can be predicted. 
 
 Dataset - https://www.kaggle.com/datasets/ipythonx/wikiart-gangogh-creating-art-gan 
 
