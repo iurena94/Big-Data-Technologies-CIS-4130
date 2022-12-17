@@ -1,16 +1,13 @@
-### CIS 4130
-### Isaias Urena
-### Isaias.Urena@baruchmail.cuny.edu
-##
 
-### Project Proposal
+## Project Proposal
 The aim of this project is to identify the characteristics related to a specific type of visual art. Through the collection and evaluation of images from WikiArt.org, the likelihood of a new image falling into an art category can be predicted. Unique data can be generated following the same attributes observed in each art type. 
 
 Dataset - https://www.kaggle.com/datasets/ipythonx/wikiart-gangogh-creating-art-gan 
 
 This dataset is a collection of 96014 visual art pieces, which include abstract, portrait, and landscape paintings. Each piece varies color composition, objects depicted, and the year they were created. I plan to evaluate all the images in each category to determine any similarities, traits, and differences they have from one another. These traits could be color composition or shapes and will be used to determine the likelihood a new image falls under the category.
- 
-### Data Collection
+
+
+## Data Collection
 
 To begin, I create a bucket in the Amazon s3 under the name “project-data-images” to store the dataset by using, 
 `aws s3api create-bucket --bucket project-data-images --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2`.
@@ -76,8 +73,8 @@ To ensure the data was properly downloaded, I navigate the project-data-images b
   
 ![image](https://user-images.githubusercontent.com/101361036/208178225-80f24d45-9135-4a9d-b85a-06370f6d7825.png)
 
- 
-### Analyzing Data
+
+## Analyzing Data
 With the creation of an accessible folder, the included .csv file will be used to count how many images are in each file. The WikiArt.csv file includes three columns, which are image_path, class_name, and label. By grouping all entry by there class_name, we can then count how many times each label is brought up. Each label corresponds to a class_name. Using the following script, we can display each class_name with their respective count. The results will then be written down in a .csv file named ‘WikiArt_analysis.csv’
 ```py
 import boto3
@@ -168,8 +165,8 @@ print(results)
 
 ![image](https://user-images.githubusercontent.com/101361036/208178473-b7288bbb-3695-4dd5-941d-d09cfddbec52.png)
 
- 
-### Modeling
+
+## Modeling
 After having collected some features into an .csv file, I begin modeling a pipeline using pyspark. The .csv file collected from the prior step will be read, split up, then fitted into the pipeline. To begin, I first read the file into “wikiartdf” and create a new column to store the label for each image. The labels will be a number from zero to thirteen, which corresponds to an art genre. 
 
 *matplotlib is installed in preparation for the final step using `pip3 install matplotlib`*  
@@ -197,7 +194,9 @@ labels = {'abstract':0, 'animal-painting':1, 'cityscape':2, 'figurative':3, 'flo
 labels_expr = create_map([lit(x) for x in chain(*labels.items())])
 wikiartdf = wikiartdf.withColumn("label", labels_expr[col("Class_name")])
 ```
-Since two of the ten columns are strings, but I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consiste of one stage, being the assembler.
+![image](https://user-images.githubusercontent.com/101361036/208215373-8d6610a5-75d0-438f-bc19-f6e1cd7da08b.png)
+
+Since two of the ten columns are strings, but I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consist of one stage, which is the assembler.
 ```py
 #Aseembler
 assembler = VectorAssembler(inputCols=["HorizontalResolution", "VerticalResolution",\
@@ -231,18 +230,11 @@ bestModel = all_models.bestModel
 #Results from best model
 test_results = bestModel.transform(testData)
 #Show each image's prediction
-test_results.select('Image_name','Class_name','probability', 'prediction',
-'label').show(truncate=False)
+test_results.select('Image_name','Class_name','probability', 'prediction', 'label').show(truncate=False)
 #Best models accuaracy 
 print(evaluator.evaluate(test_results))
 ```
-![image](https://user-images.githubusercontent.com/101361036/208192446-ab7ac670-0399-4a6c-bb18-42a3cbc82ca3.png)
-
-Visualizing the results of any model makes it easier to understand how successful a model has become without having to be overwhelmed by multiple values. I'll be displaying a table to show an image's predicted and true label.
-```py
-test_results.select('Image_name','Class_name','prediction','label').show(truncate=False)
-```
-![image](https://user-images.githubusercontent.com/101361036/208200184-6df102a6-8377-4994-88d2-c15427a95dc4.png)
+![image](https://user-images.githubusercontent.com/101361036/208216456-9242c702-bce7-45f0-aec1-23f364d034dc.png)
 
 This model is then saved into the “project-data-images” bucket under the name “wikiart_random_forest_regression”.
 ```
@@ -250,25 +242,35 @@ This model is then saved into the “project-data-images” bucket under the nam
 model_path = "s3://project-data-images/wikiart_random_forest_regression"
 bestModel.write().overwrite().save(model_path) 
 ```
-We can create a bar graph to show the importance each feature had on developing the model. 
+
+Visualizing the results of any model makes it easier to understand how successful a model has become without having to be overwhelmed by multiple values. I'll be displaying a table to show an image's predicted and true label.
 ```py
-featurelst = ["HorizontalResolution", "VerticalResolution",\
- "LightRatio", "RGBMean", "ORB", "FAST", "BRIEF", "label"]
-
-importances = bestModel.featureImportances
-x_values = list(range(len(importances)))
-plt.bar(x_values, importances, orientation = 'vertical')
-plt.xticks(x_values, featurelst, rotation=40)
-plt.ylabel('Importance')
-plt.xlabel('Feature')
-plt.title('Feature Importances')
-plt.savefig("FeatureImportances.png")
+test_results.select('Image_name','Class_name','prediction','label').show(truncate=False)
 ```
-The created .png can then be moved from the HDFS by using
-`hdfs df -get hdfs:///PRC.png` then `aws s3 cp PRC.png s3://project-data-images`
+![image](https://user-images.githubusercontent.com/101361036/208215592-fcf8c949-e041-469a-b594-4ecdb8d68e78.png)
 
-##### *FeatureImportances.png*
+Creating a confusion matric allows us to see all the predictions grouped by the data's labels.
+```py
+test_results.groupby('label').pivot('prediction').count().fillna(0).show()
+```
+![image](https://user-images.githubusercontent.com/101361036/208215720-3b4f0404-287d-4bb3-9ce3-60c3884b330f.png)
 
+We can create a graph to show the relasionship between this model's precision and recall. 
+```py
+import matplotlib.pyplot as plt
+plt.figure(figsize=(5,5))
 
+plt.plot(bestModel.summary.precisionByLabel, bestModel.summary.recallByLabel)
+plt.xlabel('Precision')
+plt.ylabel('Recall')
+plt.title("Prediction and Recall Chart")
+plt.savefig("prc.png")
+```
+The created .png image can then be moved from the HDFS by using
+`hdfs df -get hdfs:///prc.png` then `aws s3 cp prc.png s3://project-data-images`
 
+![prc](https://user-images.githubusercontent.com/101361036/208216202-e03e3634-5901-44bc-8387-1c2db76b7c1f.png)
 
+## Conclusion
+
+Overall, this project was used to gain an understanding of how to develop a proper machine-learning pipeline. Having had no prior experience working with a cloud infrastructure or assembling a pipeline, completing this project proved to be very insightful. It's clear from the results that this model isn't the best, and some sort of improvement is necessary. There are a few things I would've done differently, which include experimenting with the different types of regression. I would experiment with models that used random forest or decision tree regression. These could be more suitable for working with multiple classes. Additionally, I'd considered creating a model that directly reads the images instead of accumulating image features into a spreadsheet. As a result, it would eliminate the need to run the feature extraction script and might result in a promising model.
