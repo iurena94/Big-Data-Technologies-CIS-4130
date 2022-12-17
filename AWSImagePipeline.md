@@ -184,7 +184,6 @@ from pyspark.ml.evaluation import *
 from pyspark.ml.tuning import *
 from itertools import chain
 from pyspark.sql.types import *
-import matplotlib.pyplot as plt
 import numpy as np
 
 spark = SparkSession.builder.getOrCreate()
@@ -200,7 +199,7 @@ wikiartdf = wikiartdf.withColumn("label", labels_expr[col("Class_name")])
 ```
 ![image](https://user-images.githubusercontent.com/101361036/208215373-8d6610a5-75d0-438f-bc19-f6e1cd7da08b.png)
 
-Since two of the ten columns are strings, but I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consist of one stage, which is the assembler.
+Since two of the ten columns are strings, I won't be using them as part of the model. As a result, I won't be using the String Indexer or One Hot Encoder to convert them into a vector before assembling them in the Vector Assembler. The pipeline “wikiartpipe” will only consist of one stage, which is the assembler.
 ```py
 #Assembler
 assembler = VectorAssembler(inputCols=["HorizontalResolution", "VerticalResolution",\
@@ -259,7 +258,7 @@ test_results.groupby('label').pivot('prediction').count().fillna(0).show()
 ```
 ![image](https://user-images.githubusercontent.com/101361036/208215720-3b4f0404-287d-4bb3-9ce3-60c3884b330f.png)
 
-We can create a graph to show the relasionship between this model's precision and recall. 
+We can create a graph to show the relationship between this model's precision and recall. 
 ```py
 import matplotlib.pyplot as plt
 plt.figure(figsize=(5,5))
