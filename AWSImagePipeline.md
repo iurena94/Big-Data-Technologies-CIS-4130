@@ -143,8 +143,8 @@ for object in my_bucket.objects.all():
 			img = imread(name, as_gray=True)
 			lightratio = np.sum(img)/pixel
 			# creating entries
-entry = [name, class_name, width, height,lightratio,\
-rgbmean,len(orbkeypoints), len(fastkeypoints),len(briefkeypoints)]
+			entry = [name, class_name, width, height,lightratio,\
+			rgbmean,len(orbkeypoints), len(fastkeypoints),len(briefkeypoints)]
 			rows.append(entry)
 		except botocore.exceptions.DataNotFoundError as e:
 			print(e)
