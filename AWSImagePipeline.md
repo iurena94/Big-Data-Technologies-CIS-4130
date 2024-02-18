@@ -21,6 +21,8 @@ Since the data comes from Kaggle, I’ll install the Kaggle CLI. I’ll be modif
 `chmod 600 .kaggle/kaggle.json`
 
 `kaggle datasets list`
+--- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+ *If having issues accessing Kaggle, below may help* 
 
 Following this, I access the Kaggle_api_extended.py and modify lines 1582 and 1594 by expanding on the conditionals.
 
@@ -38,6 +40,8 @@ Line 1594 changed to:
 
 + with open(outfile, 'wb') if outpath != "-" else os.fdopen(sys.stdout.fileno(), 'wb', closefd=False) as out:
 ```
+--- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+
 Once completed, I’m able to download the dataset. The dataset in question can be located through the username/title in that order. Ipythonx/wikiart-gangogh-creating-art-gan is the dataset and was found within the URL link on the Kaggle website. I’ll be piping the data into the aws s3 bucket named “project-data-images” and into a zip file named “art.zip”.
 
 `kaggle datasets download -d ipythonx/wikiart-gangogh-creating-art-gan -p -  | aws s3 cp - s3://project-data-images/art.zip`
